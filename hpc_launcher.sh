@@ -7,7 +7,7 @@ nproc_per_node=4        # number of processes (models) per node
 master_addr=$3          # hostname for the master node
 port=8888               #
 
-pipenv run python -m torch.distributed.launch \
+python -m torch.distributed.launch \
     --nproc_per_node ${nproc_per_node} \
     --nnodes ${nnodes} \
     --node_rank ${node_rank} \
