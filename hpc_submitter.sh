@@ -4,6 +4,8 @@
 #SBATCH --time=1:00:00
 #SBATCH --account=rrg-kevinlb
 #SBATCH --exclusive
+#SBATCH --mem=5G
+#SBATCH --gres=gpu:2
 #SBATCH --job-name=tester_distributed
 
 ORIG_DIR="$(pwd)"
