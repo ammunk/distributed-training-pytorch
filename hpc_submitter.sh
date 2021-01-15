@@ -6,6 +6,10 @@
 #SBATCH --exclusive
 #SBATCH --job-name=tester_distributed
 
+ORIG_DIR="$(pwd)"
+
+cd "$SLURM_TMPDIR"
+
 var=(`scontrol show hostname $SLURM_NODELIST`)
 node_sz=${#var[@]}
 echo $var
@@ -14,7 +18,11 @@ echo `seq 0 $(echo $node_sz -1 | bc)`
 
 # load the necessary modules, depend on your hpc env
 module load python/3.8.2
-pipenv install
+
+mkdir virtual_env && virtualenv --no-download virtual_env && source virtual_env/bin/activate
+
+pip install --no-index --upgrade pip
+pip install --no-index -r requirements.txt
 
 for i in `seq 0 $(echo $node_sz -1 | bc)`;
 do
