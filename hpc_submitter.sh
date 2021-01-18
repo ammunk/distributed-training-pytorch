@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --nodes=1
-#SBATCH --ntasks=2
+#SBATCH --ntasks=1
 #SBATCH --time=1:00:00
 #SBATCH --account=rrg-kevinlb
 #SBATCH --mem=5G

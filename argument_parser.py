@@ -4,7 +4,9 @@ import argparse
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--demo', choices=['basic'], type=str)
+    parser.add_argument('--demo', choices=['basic', 'training'], type=str)
+    parser.add_argument('--dataloader', choices=['distributed','standard'],
+                        type=str)
 
     # distributed settings
 
