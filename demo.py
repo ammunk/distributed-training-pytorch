@@ -19,17 +19,36 @@ def training_demo(local_rank, local_size, dataloader):
     n = torch.cuda.device_count() // local_size
     device_ids = list(range(local_rank*n, (local_rank+1)*n))
 
+    # setup groups
+    all_ranks = torch.arange(GLOBAL_WORLD_SIZE)
+    split_training = local_world_size > 1
+    if split_training:
+        X_ranks, Y_ranks = [list(ranks) for ranks in all_ranks.chunk(2)]
+    else:
+        X_ranks = list(all_ranks)
+        Y_ranks = list(all_ranks)
+    # create group X
+    grp_X = dist.new_group(X_ranks)
+    # create group Y
+    grp_Y = dist.new_group(Y_ranks)
+    # create group Z
+    grp_Z = dist.new_group(list(all_ranks))
+
     with torch.cuda.device(device_ids[0]):
         print(f"[{dist.get_rank()}]: Training")
-        model = ToyModel().cuda()
-        ddp_model = DDP(model, device_ids=device_ids)
+        model_X = ToyModel().cuda()
+        model_Y = ToyModel().cuda()
+        model_Z = ToyModel().cuda()
+        ddp_model_X = DDP(model_X, device_ids=device_ids, process_group=grp_X)
+        ddp_model_Y = DDP(model_Y, device_ids=device_ids, process_group=grp_Y)
+        ddp_model_Z = DDP(model_Z, device_ids=device_ids, process_group=grp_Z)
         loss = nn.MSELoss()
         optimizer = optim.SGD(ddp_model.parameters(), lr=1e-3)
 
         for idx, (data, target) in enumerate(dataloader):
             data = data.cuda()
             target = target.cuda()
-            output = ddp_model(data)
+            output = ddp_model_X(data)
             l = loss(output, target)
             l.backward()
             optimizer.step()
@@ -39,6 +58,11 @@ def training_demo(local_rank, local_size, dataloader):
 
 def setup_and_run(local_rank, local_world_size, fn, args):
     dist.init_process_group(backend='nccl')
+
+    if dist.get_rank() == 0:
+        print(f"world_size = {dist.get_world_size()}")
+        print(f"local_world_size = {config.local_world_size}")
+        print(f"Available devices = {torch.cuda.device_count()}")
 
     if args.dataloader == 'distributed':
         dataloader = DataLoader(ToyData(), batch_size=2, shuffle=False,

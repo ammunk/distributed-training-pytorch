@@ -7,6 +7,8 @@ nproc_per_node=2        # number of processes (models) per node
 master_addr=$3          # hostname for the master node
 port=8888               #
 
+echo "LAUNCHING PYTHON SCRIPT"
+
 python -m torch.distributed.launch \
     --nproc_per_node ${nproc_per_node} \
     --nnodes ${nnodes} \
