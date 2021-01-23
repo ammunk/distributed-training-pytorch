@@ -1,7 +1,0 @@
--i https://pypi.org/simple
---extra-index-url https://download.pytorch.org/whl/torch_stable.html/cu110/
-numpy
-pillow==8.1.0; python_version >= '3.6'
-torch==1.7.1
-torchvision==0.8.2
-typing-extensions==3.7.4.3

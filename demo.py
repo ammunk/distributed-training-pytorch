@@ -58,6 +58,7 @@ def training_demo(local_rank, local_size, dataloader):
 
 def setup_and_run(local_rank, local_world_size, fn, args):
     dist.init_process_group(backend='nccl')
+    print(f"[dist.get_rank()]:STARTING RUN")
 
     if dist.get_rank() == 0:
         print(f"world_size = {dist.get_world_size()}")
