@@ -57,12 +57,12 @@ def training_demo(local_rank, local_size, dataloader):
     print(f"[{dist.get_rank()}]: Finished")
 
 def setup_and_run(local_rank, local_world_size, fn, args):
-    dist.init_process_group(backend='nccl')
-    print(f"[dist.get_rank()]:STARTING RUN")
+    dist.init_process_group(backend='nccl', init_method='env://')
+    print(f"[RANK {dist.get_rank()}]: STARTING RUN")
 
     if dist.get_rank() == 0:
         print(f"world_size = {dist.get_world_size()}")
-        print(f"local_world_size = {config.local_world_size}")
+        print(f"local_world_size = {local_world_size}")
         print(f"Available devices = {torch.cuda.device_count()}")
 
     if args.dataloader == 'distributed':
