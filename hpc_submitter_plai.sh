@@ -9,7 +9,6 @@
 #SBATCH --job-name=tester_distributed
 #SBATCH --partition=plai
 
-ORIG_DIR="$(pwd)"
 export PLAI_TMPDIR="/scratch-ssd/amunk_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 
 if [ ! -d virtual_env ]; then
@@ -30,8 +29,8 @@ nvidia-smi topo -m
 for i in `seq 0 $(echo $node_sz -1 | bc)`;
 do
     echo "launching ${i} job on ${var[i]} with master address ${var[0]}"
-    srun -w ${var[$i]} -N1 -n1 bash hpc_launcher.sh ${node_sz} ${i} ${var[0]} \
-        $PLAI_TMPDIR &
+    srun -w ${var[$i]} -N1 -n1 bash hpc_launcher_launcher.sh ${node_sz} ${i} \
+        ${var[0]} $PLAI_TMPDIR &
 done
 
 wait
