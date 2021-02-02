@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -9,15 +10,16 @@ import torch.optim as optim
 from argument_parser import get_args
 from toy_model_and_data import ToyModel, ToyData
 
-def basic_demo(local_rank, local_size, dataloader):
+def basic_demo(local_rank, local_world_size, dataloader):
     print(f"dist rank = {dist.get_rank()}, provided rank = {local_rank}, "
           + f"world_size = {dist.get_world_size()}, "
-          + f"local_world_size = {local_size}")
+          + f"local_world_size = {local_world_size}")
     print(f"Available devices = {torch.cuda.device_count()}")
 
-def training_demo(local_rank, local_size, dataloader):
-    n = torch.cuda.device_count() // local_size
+def training_demo(local_rank, local_world_size, dataloader):
+    n = torch.cuda.device_count() // local_world_size
     device_ids = list(range(local_rank*n, (local_rank+1)*n))
+    GLOBAL_WORLD_SIZE = int(os.getenv('WORLD_SIZE', None))
 
     # setup groups
     all_ranks = torch.arange(GLOBAL_WORLD_SIZE)
@@ -43,7 +45,7 @@ def training_demo(local_rank, local_size, dataloader):
         ddp_model_Y = DDP(model_Y, device_ids=device_ids, process_group=grp_Y)
         ddp_model_Z = DDP(model_Z, device_ids=device_ids, process_group=grp_Z)
         loss = nn.MSELoss()
-        optimizer = optim.SGD(ddp_model.parameters(), lr=1e-3)
+        optimizer = optim.SGD(ddp_model_X.parameters(), lr=1e-3)
 
         for idx, (data, target) in enumerate(dataloader):
             data = data.cuda()
