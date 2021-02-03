@@ -14,3 +14,4 @@ verify_ssl = true
 torch = {version='1.7.1', index='pytorch'}
 torchvision = {version='0.8.2', index='pytorch'}
 torchaudio = '0.7.2'
+pytorch-lightning = "*"
