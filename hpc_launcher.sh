@@ -19,7 +19,7 @@ python -m torch.distributed.launch \
     --master_port ${port} \
     demo.py \
     --local_world_size ${nproc_per_node} \
-    --demo basic \
-    --dataloader standard
+    --demo training \
+    --dataloader distributed
 
 nvidia-smi topo -m

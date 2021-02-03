@@ -14,7 +14,8 @@ class ToyModel(nn.Module):
         self.net2 = nn.Linear(10, 1)
 
     def forward(self, x):
-        print(f"[{dist.get_rank()}]: {x}")
+        # print(f"[{dist.get_rank()}]: {x}")
+        # print(f"[{dist.get_rank()}]: {x.shape}")
         return self.net2(self.relu(self.net1(x)))
 
 class ToyData(Dataset):
