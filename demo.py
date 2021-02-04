@@ -4,7 +4,6 @@ import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.optim as optim
 
 from argument_parser import get_args

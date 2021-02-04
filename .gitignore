@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 virtual_env
 slurm.*.out
+lightning_logs/
