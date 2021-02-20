@@ -7,7 +7,7 @@
 #SBATCH --mem-per-cpu=5G
 #SBATCH --cpus-per-task=2
 #SBATCH --gres=gpu:p100:2
-#SBATCH --job-name=tester_distributed
+#SBATCH --job-name=tester_distributed_lightning
 
 var=(`scontrol show hostname $SLURM_NODELIST`)
 node_sz=${#var[@]}
