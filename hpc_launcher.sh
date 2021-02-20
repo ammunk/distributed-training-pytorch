@@ -9,6 +9,7 @@ port=8888               #
 SOURCE_DIR="$(pwd)"
 cd "${SLURM_TMPDIR}"
 cp ${SOURCE_DIR}/* .
+nvcc --version
 
 echo "LAUNCHING PYTHON SCRIPT on $(hostname)"
 python -m torch.distributed.launch \
@@ -23,3 +24,4 @@ python -m torch.distributed.launch \
     --dataloader distributed
 
 nvidia-smi topo -m
+nvcc --version
