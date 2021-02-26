@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+for node in {01..12}; do
+    sbatch --ntasks=1 --job-name="plai${node}-cleanup" \
+        --partition=plai \
+        --time=1:00 --nodelist="plai${node}" \
+        -o hpc_output/cleanup_plai"${node}"_%j.out \
+       plai_cleanup.sh
+done

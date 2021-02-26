@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from toy_model_and_data import ToyData, ToyModel
 

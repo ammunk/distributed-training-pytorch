@@ -1,0 +1,4 @@
+demo.py \
+--local_world_size 2 \
+--demo training \
+--dataloader distributed
