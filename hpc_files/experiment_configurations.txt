@@ -1,4 +1,3 @@
-demo.py \
---local_world_size 2 \
---demo training \
---dataloader distributed
+python demo-pytorch-lightning.py \
+--gpus 1 \
+--num_nodes 1
