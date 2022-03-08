@@ -132,3 +132,4 @@ slurm.*.out
 lightning_logs/
 slurm.*.out
 wandb
+srun_output.out
