@@ -9,6 +9,7 @@ import multiprocessing
 import socket
 import wandb
 from tqdm import tqdm
+import torch.multiprocessing
 
 from argument_parser import get_args
 from toy_model_and_data import ToyModel, ToyData
@@ -50,7 +51,7 @@ def setup_distributed(config):
     model_Y = DDP(model_Y, device_ids=[local_rank],)
     return model_X, model_Y
 
-def training_demo(model_X, model_Y, dataset):
+def training_demo(model_X, model_Y, dataloader):
     if dist.get_rank() == 0:
         run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
 
@@ -59,12 +60,11 @@ def training_demo(model_X, model_Y, dataset):
 
     loss = nn.MSELoss()
     training = True
-    max_iterations = 500
+    max_iterations = 1000
     iteration = 0
-    iteration_pbar = tqdm(range(int(max_iterations)), desc=f"Iteration",
-                          disable=dist.get_rank() != 0)
 
-    dataloader = get_dataloader(config, dataset)
+    iteration_pbar = tqdm(range(int(max_iterations)), desc=f"Iteration",
+                          disable=dist.get_rank()!=0)
 
     while training:
         for _, (data, target) in enumerate(dataloader):
@@ -72,17 +72,17 @@ def training_demo(model_X, model_Y, dataset):
             optimizer_Y.zero_grad(set_to_none=True)
             data = data.cuda()
             target = target.cuda()
-            output_X = model_X(data).squeeze()
-            output_Y = model_Y(data).squeeze()
+            output_X = model_X(data)
+            output_Y = model_Y(data)
             l_X = loss(output_X, target)
             l_X.backward()
             l_Y = loss(output_Y, target)
             l_Y.backward()
             optimizer_X.step()
             optimizer_Y.step()
-            if dist.get_rank() == 0 and iteration % 10 == 0:
-                wandb.log({'loss/lossX': l_X.item()})
-                wandb.log({'loss/lossY': l_Y.item()})
+            # if dist.get_rank() == 0 and iteration % 10 == 0:
+            #    wandb.log({'loss/lossX': l_X.item()})
+            #    wandb.log({'loss/lossY': l_Y.item()})
 
             iteration_pbar.update(1)
             iteration += 1
@@ -91,6 +91,7 @@ def training_demo(model_X, model_Y, dataset):
                 training = False
                 break
     iteration_pbar.close()
+    dist.barrier()
     print(f"[Process {dist.get_rank()}] Finished")
 
 def get_dataloader(config, dataset):
@@ -99,14 +100,15 @@ def get_dataloader(config, dataset):
         # Will partition the data so that each process works on their own
         # partition
         return DataLoader(dataset, batch_size=128, shuffle=False,
-                          num_workers=2,
-                          sampler=DistributedSampler(ToyData(),
-                                                     shuffle=True))
+                          pin_memory=True,
+                          num_workers=config.num_workers,
+                          sampler=DistributedSampler(dataset, shuffle=True))
     elif config.dataloader == 'standard':
         # Data will not be partiions. Each process draws data from the entire
         # dataset. As a consequence, setting shuffle=false leads to each process
         # working on the same minibatch.
-        return DataLoader(dataset, batch_size=128, shuffle=False, num_workers=2)
+        return DataLoader(dataset, pin_memory=True, batch_size=128,
+                          shuffle=False, num_workers=config.num_workers)
 
 if __name__ == '__main__':
     config = get_args()
@@ -114,13 +116,20 @@ if __name__ == '__main__':
     if config.dry_run:
         os.environ['WANDB_MODE'] = 'dryrun'
 
-    if config.backend == 'nccl':
-        # see https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#torch.nn.parallel.DistributedDataParallel
-        multiprocessing.set_start_method('forkserver')
+    if config.backend == 'nccl' and config.num_workers > 0:
+        # see
+        # https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#torch.nn.parallel.DistributedDataParallel
+        torch.multiprocessing.set_start_method('forkserver') # or spawn
+        # If there are shared tensors in the dataset we set the following as per
+        # https://github.com/pytorch/pytorch/issues/11201 and
+        # https://github.com/pytorch/pytorch/issues/11899
+        torch.multiprocessing.set_sharing_strategy('file_system')
 
     # TODO: check models are the same upon initialization
     model_X, model_Y = setup_distributed(config)
 
-    training_demo(model_X, model_Y, ToyData())
+    dataloader = get_dataloader(config, ToyData())
+
+    training_demo(model_X, model_Y, dataloader)
 
     dist.destroy_process_group()

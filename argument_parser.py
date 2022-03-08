@@ -12,6 +12,8 @@ def get_args():
 
     parser.add_argument('--seed', default=random.randint(0,2**32-1), type=int)
 
+    parser.add_argument('--num_workers', default=0, type=int)
+
     parser.add_argument("--dry_run", action="store_true",
                         help="Dry run (do not log to wandb)")
 

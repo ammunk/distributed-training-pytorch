@@ -26,11 +26,11 @@ class ToyModel(nn.Module):
 
 class ToyData(Dataset):
     def __init__(self):
-        self.data = [[float(x)]*2 for x in torch.randn(512)]
+        self.data = [torch.tensor([float(x)]*2) for x in torch.randn(512)]
         self.y = [torch.randn(1)*0.5 + x[0]**2 for x in self.data]
 
     def __getitem__(self, idx):
-        return torch.tensor(self.data[idx]), torch.tensor(self.y[idx])
+        return self.data[idx], self.y[idx]
 
     def __len__(self):
         return len(self.data)
