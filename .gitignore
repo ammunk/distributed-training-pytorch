@@ -131,3 +131,4 @@ virtual_env
 slurm.*.out
 lightning_logs/
 slurm.*.out
+wandb

@@ -5,106 +5,122 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
 import torch.optim as optim
+import multiprocessing
+import socket
+import wandb
+from tqdm import tqdm
 
 from argument_parser import get_args
 from toy_model_and_data import ToyModel, ToyData
 
-def basic_demo(local_rank, local_world_size, dataloader):
-    print(f"dist rank = {dist.get_rank()}, provided rank = {local_rank}, "
-          + f"world_size = {dist.get_world_size()}, "
-          + f"local_world_size = {local_world_size}")
-    print(f"Available devices = {torch.cuda.device_count()}")
+def setup_distributed(config):
 
-def training_demo(local_rank, local_world_size, dataloader):
-    n = torch.cuda.device_count() // local_world_size
-    device_ids = list(range(local_rank*n, (local_rank+1)*n))
-    GLOBAL_WORLD_SIZE = int(os.getenv('WORLD_SIZE', None))
+    # initialize models
+    model_X = ToyModel()
+    model_Y = ToyModel()
 
-    # setup groups
-    all_ranks = torch.arange(GLOBAL_WORLD_SIZE)
-    split_training = local_world_size > 1
-    if split_training:
-        X_ranks, Y_ranks = [ranks.tolist() for ranks in all_ranks.chunk(2)]
-    else:
-        X_ranks = all_ranks.tolist()
-        Y_ranks = all_ranks.tolist()
-    # create group X
-    grp_X = dist.new_group(X_ranks)
-    # create group Y
-    grp_Y = dist.new_group(Y_ranks)
-    # create group Z
-    grp_Z = dist.new_group(all_ranks)
+    # nccl is faster and is included in the pre-built binaries with CUDA
+    dist.init_process_group(backend=config.backend)
+    try:
+        global_world_size = int(os.getenv('WORLD_SIZE', None))
+        local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
+    except Exception as e:
+        raise RuntimeError("WORLD_SIZE environment variable is required and "
+                            + "must be an interger.")
+    if dist.get_rank() == 0:
+        print(f"world_size: {dist.get_world_size()}")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    if local_rank == 0:
+        print(f"[Process {dist.get_rank()}] Available devices on machine: {torch.cuda.device_count()}")
 
-    with torch.cuda.device(device_ids[0]):
-        print(f"[{dist.get_rank()}]: Training")
-        model_X = ToyModel().cuda()
-        model_Y = ToyModel().cuda()
-        model_Z = ToyModel().cuda()
-        if dist.get_rank() in X_ranks:
-            ddp_model_X = DDP(model_X, device_ids=device_ids,
-                              process_group=grp_X)
-            optimizer_X = optim.SGD(ddp_model_X.parameters(), lr=1e-3)
-        if dist.get_rank() in Y_ranks:
-            ddp_model_Y = DDP(model_Y, device_ids=device_ids,
-                              process_group=grp_Y)
-            optimizer_Y = optim.SGD(ddp_model_Y.parameters(), lr=1e-3)
-        ddp_model_Z = DDP(model_Z, device_ids=device_ids, process_group=grp_Z)
-        loss = nn.MSELoss()
-        optimizer_Z = optim.SGD(ddp_model_Z.parameters(), lr=1e-3)
+    print(f"[Process {dist.get_rank()}] Hello from {socket.gethostname()}")
 
-        for idx, (data, target) in enumerate(dataloader):
+    # ensure each worker are seeded differently
+    base_seed = config.seed
+    config.seed += dist.get_rank()
+    print(f"[Process {dist.get_rank()}] Base seed: {base_seed} and  worker seed: {config.seed}")
+
+    # calling .cuda() will push model onto device local_rank
+    torch.cuda.set_device(local_rank)
+
+    # push models to devices and create DDP models
+    model_X = model_X.cuda()
+    model_X = DDP(model_X, device_ids=[local_rank],)
+    model_Y= model_Y.cuda()
+    model_Y = DDP(model_Y, device_ids=[local_rank],)
+    return model_X, model_Y
+
+def training_demo(model_X, model_Y, dataset):
+    if dist.get_rank() == 0:
+        run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
+
+    optimizer_X = optim.Adam(model_X.parameters(), lr=1e-3)
+    optimizer_Y = optim.Adam(model_Y.parameters(), lr=1e-3)
+
+    loss = nn.MSELoss()
+    training = True
+    max_iterations = 500
+    iteration = 0
+    iteration_pbar = tqdm(range(int(max_iterations)), desc=f"Iteration",
+                          disable=dist.get_rank() != 0)
+
+    dataloader = get_dataloader(config, dataset)
+
+    while training:
+        for _, (data, target) in enumerate(dataloader):
+            optimizer_X.zero_grad(set_to_none=True)
+            optimizer_Y.zero_grad(set_to_none=True)
             data = data.cuda()
             target = target.cuda()
-            output = 0
-            if dist.get_rank() in X_ranks:
-                output += ddp_model_X(data).squeeze()
-            elif dist.get_rank() in Y_ranks:
-                output += ddp_model_Y(data).squeeze()
-            output += ddp_model_Z(data).squeeze()
-            l = loss(output, target)
-            l.backward()
-            if dist.get_rank() in X_ranks:
-                optimizer_X.step()
-            if dist.get_rank() in Y_ranks:
-                optimizer_Y.step()
-            optimizer_Z.step()
-            if idx > 100:
+            output_X = model_X(data).squeeze()
+            output_Y = model_Y(data).squeeze()
+            l_X = loss(output_X, target)
+            l_X.backward()
+            l_Y = loss(output_Y, target)
+            l_Y.backward()
+            optimizer_X.step()
+            optimizer_Y.step()
+            if dist.get_rank() == 0 and iteration % 10 == 0:
+                wandb.log({'loss/lossX': l_X.item()})
+                wandb.log({'loss/lossY': l_Y.item()})
+
+            iteration_pbar.update(1)
+            iteration += 1
+
+            if iteration == max_iterations:
+                training = False
                 break
-    print(f"[{dist.get_rank()}]: Finished")
+    iteration_pbar.close()
+    print(f"[Process {dist.get_rank()}] Finished")
 
-def setup_and_run(local_rank, local_world_size, fn, args):
-    dist.init_process_group(backend='nccl', init_method='env://')
-    print(f"[RANK {dist.get_rank()}]: STARTING RUN")
+def get_dataloader(config, dataset):
 
-    if dist.get_rank() == 0:
-        print(f"world_size = {dist.get_world_size()}")
-        print(f"local_world_size = {local_world_size}")
-        print(f"Available devices = {torch.cuda.device_count()}")
-
-    if args.dataloader == 'distributed':
+    if config.dataloader == 'distributed':
         # Will partition the data so that each process works on their own
         # partition
-        dataloader = DataLoader(ToyData(), batch_size=2, shuffle=False,
-                                num_workers=2,
-                                sampler=DistributedSampler(ToyData(),
-                                                           shuffle=True))
-    elif args.dataloader == 'standard':
+        return DataLoader(dataset, batch_size=128, shuffle=False,
+                          num_workers=2,
+                          sampler=DistributedSampler(ToyData(),
+                                                     shuffle=True))
+    elif config.dataloader == 'standard':
         # Data will not be partiions. Each process draws data from the entire
         # dataset. As a consequence, setting shuffle=false leads to each process
         # working on the same minibatch.
-        dataloader = DataLoader(ToyData(), batch_size=2, shuffle=False,
-                                num_workers=2)
-
-    fn(local_rank, local_world_size, dataloader)
-    dist.destroy_process_group()
+        return DataLoader(dataset, batch_size=128, shuffle=False, num_workers=2)
 
 if __name__ == '__main__':
-    args = get_args()
-    if args.demo == 'basic':
-        fn = basic_demo
-    elif args.demo == 'training':
-        fn = training_demo
-    else:
-        raise ValueError("not a valid demo")
+    config = get_args()
 
-    setup_and_run(args.local_rank, args.local_world_size, fn, args)
+    if config.dry_run:
+        os.environ['WANDB_MODE'] = 'dryrun'
+
+    if config.backend == 'nccl':
+        # see https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html#torch.nn.parallel.DistributedDataParallel
+        multiprocessing.set_start_method('forkserver')
+
+    # TODO: check models are the same upon initialization
+    model_X, model_Y = setup_distributed(config)
+
+    training_demo(model_X, model_Y, ToyData())
+
+    dist.destroy_process_group()
