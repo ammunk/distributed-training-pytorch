@@ -11,13 +11,13 @@ class ToyModel(nn.Module):
         super(ToyModel, self).__init__()
         self.layers = nn.Sequential(
             nn.Linear(2, 10),
-            nn.Leaky_ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, 10),
-            nn.Leaky_ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, 10),
-            nn.Leaky_ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, 10),
-            nn.Leaky_ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, 1),
         )
 

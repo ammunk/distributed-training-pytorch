@@ -6,9 +6,9 @@ import random
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataloader', choices=['distributed','standard'],
-                        type=str)
+                        type=str, default='distributed')
     parser.add_argument('--backend', choices=['nccl','mpi'],
-                        type=str)
+                        type=str, default='nccl')
 
     parser.add_argument('--seed', default=random.randint(0,2**32-1), type=int)
 
