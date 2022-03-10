@@ -80,9 +80,9 @@ def training_demo(model_X, model_Y, dataloader):
             l_Y.backward()
             optimizer_X.step()
             optimizer_Y.step()
-            # if dist.get_rank() == 0 and iteration % 10 == 0:
-            #    wandb.log({'loss/lossX': l_X.item()})
-            #    wandb.log({'loss/lossY': l_Y.item()})
+            if dist.get_rank() == 0 and iteration % 10 == 0:
+                wandb.log({'loss/lossX': l_X.item()})
+                wandb.log({'loss/lossY': l_Y.item()})
 
             iteration_pbar.update(1)
             iteration += 1
@@ -125,7 +125,6 @@ if __name__ == '__main__':
         # https://github.com/pytorch/pytorch/issues/11899
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-    # TODO: check models are the same upon initialization
     model_X, model_Y = setup_distributed(config)
 
     dataloader = get_dataloader(config, ToyData())
