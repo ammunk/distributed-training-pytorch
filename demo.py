@@ -51,7 +51,7 @@ def setup_distributed(config):
     model_Y = DDP(model_Y, device_ids=[local_rank],)
     return model_X, model_Y
 
-def training_demo(model_X, model_Y, dataloader):
+def training_demo(model_X, model_Y, dataloader, sampler):
     if dist.get_rank() == 0:
         run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
 
@@ -66,7 +66,11 @@ def training_demo(model_X, model_Y, dataloader):
     iteration_pbar = tqdm(range(int(max_iterations)), desc=f"Iteration",
                           disable=dist.get_rank()!=0)
 
+    epoch = 0
     while training:
+        if sampler is not None:
+            # see https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
+            sampler.set_epoch(epoch)
         for _, (data, target) in enumerate(dataloader):
             optimizer_X.zero_grad(set_to_none=True)
             optimizer_Y.zero_grad(set_to_none=True)
@@ -80,9 +84,9 @@ def training_demo(model_X, model_Y, dataloader):
             l_Y.backward()
             optimizer_X.step()
             optimizer_Y.step()
-            if dist.get_rank() == 0 and iteration % 10 == 0:
-                wandb.log({'loss/lossX': l_X.item()})
-                wandb.log({'loss/lossY': l_Y.item()})
+            if dist.get_rank() == 0:
+                wandb.log({'loss/lossX': l_X.detach()}, commit=False)
+                wandb.log({'loss/lossY': l_Y.detach()})
 
             iteration_pbar.update(1)
             iteration += 1
@@ -90,6 +94,7 @@ def training_demo(model_X, model_Y, dataloader):
             if iteration == max_iterations:
                 training = False
                 break
+        epoch += 1
     iteration_pbar.close()
     dist.barrier()
     print(f"[Process {dist.get_rank()}] Finished")
@@ -99,16 +104,17 @@ def get_dataloader(config, dataset):
     if config.dataloader == 'distributed':
         # Will partition the data so that each process works on their own
         # partition
-        return DataLoader(dataset, batch_size=128, shuffle=False,
+        sampler = DistributedSampler(dataset, shuffle=True)
+        return DataLoader(dataset, batch_size=256, shuffle=False,
                           pin_memory=True,
                           num_workers=config.num_workers,
-                          sampler=DistributedSampler(dataset, shuffle=True))
+                          sampler=sampler), sampler
     elif config.dataloader == 'standard':
         # Data will not be partiions. Each process draws data from the entire
         # dataset. As a consequence, setting shuffle=false leads to each process
         # working on the same minibatch.
-        return DataLoader(dataset, pin_memory=True, batch_size=128,
-                          shuffle=False, num_workers=config.num_workers)
+        return DataLoader(dataset, pin_memory=True, batch_size=256,
+                          shuffle=False, num_workers=config.num_workers), None
 
 if __name__ == '__main__':
     config = get_args()
@@ -127,8 +133,8 @@ if __name__ == '__main__':
 
     model_X, model_Y = setup_distributed(config)
 
-    dataloader = get_dataloader(config, ToyData())
+    dataloader, sampler = get_dataloader(config, ToyData())
 
-    training_demo(model_X, model_Y, dataloader)
+    training_demo(model_X, model_Y, dataloader, sampler)
 
     dist.destroy_process_group()
