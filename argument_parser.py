@@ -7,8 +7,12 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataloader', choices=['distributed','standard'],
                         type=str, default='distributed')
-    parser.add_argument('--backend', choices=['nccl','mpi'],
+    parser.add_argument('--backend', choices=['nccl','mpi', 'gloo'],
                         type=str, default='nccl')
+    parser.add_argument("--torchrun", action="store_true",
+                        help="Specify we are using torchrun to distribute jobs")
+
+    parser.add_argument("--use_node_rank", action="store_true")
 
     parser.add_argument('--seed', default=random.randint(0,2**32-1), type=int)
 

@@ -42,26 +42,51 @@ class MultiGPUModel(nn.Module):
 
 
 def setup_distributed(config):
-    # nccl is faster and is included in the pre-built binaries with CUDA
-    dist.init_process_group(backend=config.backend)
-    try:
-        global_world_size = int(os.getenv('WORLD_SIZE', None))
-        local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
-    except Exception as e:
-        raise RuntimeError("WORLD_SIZE environment variable is required and "
-                            + "must be an interger.")
+
+    if config.torchrun:
+        # nccl is faster and is included in the pre-built binaries with CUDA
+        dist.init_process_group(backend=config.backend)
+        try:
+            global_world_size = int(os.getenv('WORLD_SIZE', None))
+            local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
+        except Exception as e:
+            raise RuntimeError("WORLD_SIZE environment variable is required and "
+                                + "must be an interger.")
+        local_rank = int(os.environ["LOCAL_RANK"])
+    else:
+        tasks_per_node = int(os.environ.get("TASKS_PER_NODE"))
+        local_rank = int(os.environ.get("SLURM_LOCALID"))
+        if config.use_node_rank:
+            global_rank = int(os.environ.get("NODE_RANK"))*tasks_per_node + local_rank
+        else:
+            global_rank = int(os.environ.get("SLURM_PROCID"))
+
+        if local_rank is None:
+            local_rank = int(os.getenv("PBS_LOCALID", None))
+        if local_rank is None:
+            raise ValueError("Either PBS_LOCALID or SLURM_LOCALID must be set to specify this process' rank")
+
+        world_size = int(os.getenv('WORLD_SIZE', None))
+
+        addr = os.getenv("MASTER_ADDR", None)
+        port = os.getenv("MASTER_PORT", None)
+        if addr is None or port is None:
+            raise ValueError("MASTER_ADDR and MASTER_PORT must be propvided with the env:// init_method")
+        dist.init_process_group(backend=config.backend, init_method=f'tcp://{addr}:{port}', rank=global_rank, world_size=world_size)
+
     if dist.get_rank() == 0:
-        print(f"world_size: {dist.get_world_size()}")
-    local_rank = int(os.environ["LOCAL_RANK"])
+        print(f"[Process {dist.get_rank()}] World_size: {dist.get_world_size()}")
+    print(f"[Process {dist.get_rank()}] Hello from {socket.gethostname()}")
+
     if local_rank == 0:
         print(f"[Process {dist.get_rank()}] Available devices on machine: {torch.cuda.device_count()}")
-
-    print(f"[Process {dist.get_rank()}] Hello from {socket.gethostname()}")
 
     # ensure each worker are seeded differently
     base_seed = config.seed
     config.seed += dist.get_rank()
     print(f"[Process {dist.get_rank()}] Base seed: {base_seed} and  worker seed: {config.seed}")
+    print(f"[Process {dist.get_rank()}] Using torchrun: {config.torchrun}")
+    print(f"[Process {dist.get_rank()}] Using backend: {config.backend}")
 
     dev0 = (dist.get_rank()*2) % local_world_size
     dev1 = (dist.get_rank()*2 + 1 ) % local_world_size

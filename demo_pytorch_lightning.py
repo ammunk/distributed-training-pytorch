@@ -1,14 +1,17 @@
 # https://pytorch-lightning.readthedocs.io/en/stable/new-project.html
 import argparse
 import random
+import os
 
 import numpy as np
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+from pytorch_lightning.plugins import DDPPlugin
 from torch.utils.data import DataLoader
 from pytorch_lightning.loggers import WandbLogger
 import wandb
+import torch.distributed as dist
 
 from toy_model_and_data import ToyData, ToyModel
 
@@ -43,9 +46,9 @@ class LitToyModel(pl.LightningModule):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', default=1234, type=int)
-    parser.add_argument('--gpus', default=1, choices=list(range(1,5)), type=int,
+    parser.add_argument('--gpus', default=1, type=int,
                         help="number of gpus per node")
-    parser.add_argument('--num_nodes', default=1, type=int)
+    parser.add_argument('--nnodes', default=1, type=int)
     parser.add_argument('--steps', default=1000, type=int)
     parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--batch_size', default=128, type=int)
@@ -54,10 +57,13 @@ if __name__ == '__main__':
     wandb_logger = WandbLogger(project='lightning distributed tester', settings=wandb.Settings(start_method='thread'))
 
     train_dataloader = DataLoader(ToyData(), batch_size=args.batch_size,
-                                  num_workers=args.num_workers)
+                                  pin_memory=True,
+                                  )
     model = LitToyModel()
-    trainer = pl.Trainer(gpus=args.gpus, num_nodes=args.num_nodes,
-                         max_steps=args.steps, accelerator='ddp', precision=32,
+    trainer = pl.Trainer(gpus=args.gpus, num_nodes=args.nnodes,
+                         max_steps=args.steps, precision=32, accelerator='gpu',
                          log_every_n_steps=min(50, len(train_dataloader)/args.batch_size),
-                         logger=wandb_logger)
+                         logger=wandb_logger,
+                         strategy='ddp') # the backend used for ddp is specified via the PL_TORCH_DISTRIBUTED_BACKEND environment variable
+
     trainer.fit(model, train_dataloader)

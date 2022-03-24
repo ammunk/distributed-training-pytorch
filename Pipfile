@@ -1,9 +1,4 @@
 [[source]]
-name = "pypi"
-url = "https://pypi.org/simple"
-verify_ssl = true
-
-[[source]]
 url = "https://pypi.org/simple"
 verify_ssl = true
 name = "pypi"
@@ -14,12 +9,8 @@ verify_ssl = true
 name = "pytorch-cu113"
 
 [packages]
-numpy = "*"
-seaborn = "*"
 tqdm = "*"
-pandas = "*"
 wandb = "*"
-torch-fidelity = "*"
 torch = {version = "==1.10.1+cu113", index = "pytorch-cu113"}
 torchvision = {version = "==0.11.2+cu113", index = "pytorch-cu113"}
 torchaudio = {version = "==0.10.1+cu113", index = "pytorch-cu113"}

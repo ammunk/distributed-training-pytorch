@@ -132,4 +132,4 @@ slurm.*.out
 lightning_logs/
 slurm.*.out
 wandb
-srun_output.out
+**srun_output.out

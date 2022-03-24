@@ -1,4 +1,5 @@
 import os
+import datetime
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -10,6 +11,7 @@ import socket
 import wandb
 from tqdm import tqdm
 import torch.multiprocessing
+from torch.distributed.elastic.multiprocessing.errors import record
 
 from argument_parser import get_args
 from toy_model_and_data import ToyModel, ToyData
@@ -20,40 +22,64 @@ def setup_distributed(config):
     model_X = ToyModel()
     model_Y = ToyModel()
 
-    # nccl is faster and is included in the pre-built binaries with CUDA
-    dist.init_process_group(backend=config.backend)
-    try:
-        global_world_size = int(os.getenv('WORLD_SIZE', None))
-        local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
-    except Exception as e:
-        raise RuntimeError("WORLD_SIZE environment variable is required and "
-                            + "must be an interger.")
+    if config.torchrun:
+        # nccl is faster and is included in the pre-built binaries with CUDA
+        dist.init_process_group(backend=config.backend)
+        try:
+            global_world_size = int(os.getenv('WORLD_SIZE', None))
+            local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
+        except Exception as e:
+            raise RuntimeError("WORLD_SIZE environment variable is required and "
+                                + "must be an interger.")
+        local_rank = int(os.environ["LOCAL_RANK"])
+    else:
+        tasks_per_node = int(os.environ.get("TASKS_PER_NODE"))
+        local_rank = int(os.environ.get("SLURM_LOCALID"))
+        if config.use_node_rank:
+            global_rank = int(os.environ.get("NODE_RANK"))*tasks_per_node + local_rank
+        else:
+            global_rank = int(os.environ.get("SLURM_PROCID"))
+
+        if local_rank is None:
+            local_rank = int(os.getenv("PBS_LOCALID", None))
+        if local_rank is None:
+            raise ValueError("Either PBS_LOCALID or SLURM_LOCALID must be set to specify this process' rank")
+
+        world_size = int(os.getenv('WORLD_SIZE', None))
+
+        addr = os.getenv("MASTER_ADDR", None)
+        port = os.getenv("MASTER_PORT", None)
+        if addr is None or port is None:
+            raise ValueError("MASTER_ADDR and MASTER_PORT must be propvided with the env:// init_method")
+        dist.init_process_group(backend=config.backend, init_method=f'tcp://{addr}:{port}', rank=global_rank, world_size=world_size)
+
     if dist.get_rank() == 0:
-        print(f"world_size: {dist.get_world_size()}")
-    local_rank = int(os.environ["LOCAL_RANK"])
+        print(f"[Process {dist.get_rank()}] World_size: {dist.get_world_size()}")
+    print(f"[Process {dist.get_rank()}] Hello from {socket.gethostname()}")
+
     if local_rank == 0:
         print(f"[Process {dist.get_rank()}] Available devices on machine: {torch.cuda.device_count()}")
-
-    print(f"[Process {dist.get_rank()}] Hello from {socket.gethostname()}")
 
     # ensure each worker are seeded differently
     base_seed = config.seed
     config.seed += dist.get_rank()
     print(f"[Process {dist.get_rank()}] Base seed: {base_seed} and  worker seed: {config.seed}")
+    print(f"[Process {dist.get_rank()}] Using torchrun: {config.torchrun}")
+    print(f"[Process {dist.get_rank()}] Using backend: {config.backend}")
 
     # calling .cuda() will push model onto device local_rank
     torch.cuda.set_device(local_rank)
 
     # push models to devices and create DDP models
     model_X = model_X.cuda()
-    model_X = DDP(model_X, device_ids=[local_rank],)
+    model_X = DDP(model_X, device_ids=[local_rank])
     model_Y= model_Y.cuda()
     model_Y = DDP(model_Y, device_ids=[local_rank],)
     return model_X, model_Y
 
 def training_demo(model_X, model_Y, dataloader, sampler):
     if dist.get_rank() == 0:
-        run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
+       run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
 
     optimizer_X = optim.Adam(model_X.parameters(), lr=1e-3)
     optimizer_Y = optim.Adam(model_Y.parameters(), lr=1e-3)
@@ -95,8 +121,8 @@ def training_demo(model_X, model_Y, dataloader, sampler):
                 training = False
                 break
         epoch += 1
-    iteration_pbar.close()
-    dist.barrier()
+    if dist.get_rank() == 0:
+        iteration_pbar.close()
     print(f"[Process {dist.get_rank()}] Finished")
 
 def get_dataloader(config, dataset):
@@ -116,7 +142,8 @@ def get_dataloader(config, dataset):
         return DataLoader(dataset, pin_memory=True, batch_size=256,
                           shuffle=False, num_workers=config.num_workers), None
 
-if __name__ == '__main__':
+@record
+def main():
     config = get_args()
 
     if config.dry_run:
@@ -136,5 +163,8 @@ if __name__ == '__main__':
     dataloader, sampler = get_dataloader(config, ToyData())
 
     training_demo(model_X, model_Y, dataloader, sampler)
-
+    dist.barrier()
     dist.destroy_process_group()
+
+if __name__ == '__main__':
+    main()
