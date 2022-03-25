@@ -9,8 +9,6 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from pytorch_lightning.plugins import DDPPlugin
 from torch.utils.data import DataLoader
-from pytorch_lightning.loggers import WandbLogger
-import wandb
 import torch.distributed as dist
 
 from toy_model_and_data import ToyData, ToyModel
@@ -32,8 +30,6 @@ class LitToyModel(pl.LightningModule):
         loss_X = self._loss(output_X, y)
         loss_Y = self._loss(output_Y, y)
         loss = loss_X + loss_Y
-        self.log('loss/lossX', loss_X.detach())
-        self.log('loss/lossY', loss_Y.detach())
         return loss
 
     def configure_optimizers(self):
@@ -54,9 +50,6 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=128, type=int)
     args = parser.parse_args()
 
-    wandb_logger = WandbLogger(project='lightning distributed tester', settings=wandb.Settings(start_method='thread')
-                               group='demo-lightning')
-
     train_dataloader = DataLoader(ToyData(), batch_size=args.batch_size,
                                   pin_memory=True,
                                   )
@@ -64,7 +57,6 @@ if __name__ == '__main__':
     trainer = pl.Trainer(gpus=args.gpus, num_nodes=args.nnodes,
                          max_steps=args.steps, precision=32, accelerator='gpu',
                          log_every_n_steps=min(50, len(train_dataloader)/args.batch_size),
-                         logger=wandb_logger,
                          strategy='ddp') # the backend used for ddp is specified via the PL_TORCH_DISTRIBUTED_BACKEND environment variable
 
     trainer.fit(model, train_dataloader)

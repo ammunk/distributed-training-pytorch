@@ -13,6 +13,7 @@ source virtual_env/bin/activate
 
 if [[ "${SLURM_TMPDIR}" == *"scratch-ssd"* ]]; then
   SLURM_TMPDIR="${SLURM_TMPDIR}_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+  mkdir ${SLURM_TMPDIR}
 fi
 
 nodes=(`scontrol show hostname $SLURM_NODELIST`)
