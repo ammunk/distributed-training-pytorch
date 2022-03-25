@@ -1,4 +1,4 @@
-WANDB_CREDENTIALS_PATH=~WANDB_CREDENTIALS_PATH=~/wandb_credentials.txt
+WANDB_CREDENTIALS_PATH=~/wandb_credentials.txt
 export WANDB_API_KEY=$(cat $WANDB_CREDENTIALS_PATH)
 export OMP_NUM_THREADS=1
 export WORLD_SIZE=$SLURM_NTASKS
@@ -45,7 +45,7 @@ echo "Gpus per node: ${num_gpus_per_node}"
 ##############################################
 
 export NCCL_BLOCKING_WAIT=1 #Pytorch Lightning uses the NCCL backend for inter-GPU communication by default. Set this variable to avoid timeout errors.
-echo "Running job with the GLOO backend"
+echo "Running job with the NCCL backend"
 srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} \
     -c${SLURM_CPUS_PER_TASK} -o demo_nccl_multi_gpu_model_output.out -D"$(dirname "$(pwd)")" \
-    python demo_one_model_multi_gpu.py --help
+    python demo_one_model_multi_gpu.py

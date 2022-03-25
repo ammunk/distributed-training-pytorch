@@ -43,7 +43,7 @@ do
     echo "Running on node ${node} with rank $i"
     export NODE_RANK=${i} # used internally to specify global_rank
     srun -w"$node" -N1 -n${TASKS_PER_NODE} -o "demo_individual_output.out" -D"$(dirname "$(pwd)")" \
-      python demo.py --backend=nccl --dry_run --use_node_rank &
+      python demo.py --backend=nccl --use_node_rank &
     echo "Process id: $!"
 done
 wait
@@ -62,8 +62,8 @@ export NCCL_ASYNC_ERROR_HANDLING=1
 srun -w"${valid_nodes}" -N${num_valid_nodes} -n${num_valid_nodes} \
     -c${SLURM_CPUS_PER_TASK} -o demo_nccl_output.out -D"$(dirname "$(pwd)")" \
     torchrun --nnodes=${num_valid_nodes} --nproc_per_node=${TASKS_PER_NODE} \
-    --rdzv_id=1 --rdzv_backend=c10d --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
-    demo.py --backend=nccl --torchrun --dry_run
+    --rdzv_id=0 --rdzv_backend=c10d --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+    demo.py --backend=nccl --torchrun
 
 #################### MPI ####################
 
@@ -80,16 +80,16 @@ srun -w"${valid_nodes}" -N${num_valid_nodes} -n${num_valid_nodes} \
 # echo "Running MPI job"
 # srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} --mpi=pmi2 \
 #     -c${SLURM_CPUS_PER_TASK} -o demo_mpi_output.out -D"$(dirname "$(pwd)")" \
-#     python demo.py --backend=mpi --dry_run
+#     python demo.py --backend=mpi
 # wait
 
 # echo "Running MPI job with mpiexec"
 # mpiexec -n ${WORLD_SIZE} -H "${valid_nodes}" \
 #     -output-filename demo_mpiexec_output.out -wdir "$(dirname "$(pwd)")" \
-#     python demo.py --backend=mpi --dry_run
+#     python demo.py --backend=mpi
 # wait
 
 #################### GLOO ####################
 
 echo "Running job with the GLOO backend"
-srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} -o "demo_gloo_output.out" -D"$(dirname "$(pwd)")" python demo.py --backend=nccl --dry_run
+srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} -o "demo_gloo_output.out" -D"$(dirname "$(pwd)")" python demo.py --backend=gloo

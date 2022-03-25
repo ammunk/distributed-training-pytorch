@@ -26,17 +26,17 @@ def setup_distributed(config):
         # nccl is faster and is included in the pre-built binaries with CUDA
         dist.init_process_group(backend=config.backend)
         try:
-            global_world_size = int(os.getenv('WORLD_SIZE', None))
+            world_size = int(os.getenv('WORLD_SIZE', None))
             local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
         except Exception as e:
             raise RuntimeError("WORLD_SIZE environment variable is required and "
                                 + "must be an interger.")
         local_rank = int(os.environ["LOCAL_RANK"])
     else:
-        tasks_per_node = int(os.environ.get("TASKS_PER_NODE"))
+        local_world_size = int(os.environ.get("TASKS_PER_NODE"))
         local_rank = int(os.environ.get("SLURM_LOCALID"))
         if config.use_node_rank:
-            global_rank = int(os.environ.get("NODE_RANK"))*tasks_per_node + local_rank
+            global_rank = int(os.environ.get("NODE_RANK"))*local_world_size + local_rank
         else:
             global_rank = int(os.environ.get("SLURM_PROCID"))
 
@@ -75,14 +75,18 @@ def setup_distributed(config):
     model_X = DDP(model_X, device_ids=[local_rank])
     model_Y= model_Y.cuda()
     model_Y = DDP(model_Y, device_ids=[local_rank],)
-    return model_X, model_Y
+    return model_X, model_Y, world_size
 
-def training_demo(model_X, model_Y, dataloader, sampler):
+def training_demo(model_X, model_Y, dataloader, sampler, world_size):
     if dist.get_rank() == 0:
-       run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
+       run = wandb.init(project='distributed tester', group='base-demo',
+                        settings=wandb.Settings(start_method='thread'))
 
     optimizer_X = optim.Adam(model_X.parameters(), lr=1e-3)
     optimizer_Y = optim.Adam(model_Y.parameters(), lr=1e-3)
+
+    # create a new process group for all_reduce operations using gloo as backend
+    all_reduce_group = dist.new_group(backend='gloo')
 
     loss = nn.MSELoss()
     training = True
@@ -110,9 +114,16 @@ def training_demo(model_X, model_Y, dataloader, sampler):
             l_Y.backward()
             optimizer_X.step()
             optimizer_Y.step()
+            # all_reduce using specific process group
+            # assumes each process has equal batch size on EVERY iteration
+            batch_size = target.size(0)
+            all_reduce_loss_X = l_X.detach().cpu()
+            dist.all_reduce(all_reduce_loss_X*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
+            all_reduce_loss_Y = l_Y.detach().cpu()
+            dist.all_reduce(all_reduce_loss_Y*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
             if dist.get_rank() == 0:
-                wandb.log({'loss/lossX': l_X.detach()}, commit=False)
-                wandb.log({'loss/lossY': l_Y.detach()})
+                wandb.log({'loss/lossX': all_reduce_loss_X / (batch_size * world_size) }, commit=False)
+                wandb.log({'loss/lossY': all_reduce_loss_Y / (batch_size * world_size)})
 
             iteration_pbar.update(1)
             iteration += 1
@@ -121,6 +132,7 @@ def training_demo(model_X, model_Y, dataloader, sampler):
                 training = False
                 break
         epoch += 1
+    dist.destroy_process_group(all_reduce_group)
     if dist.get_rank() == 0:
         iteration_pbar.close()
     print(f"[Process {dist.get_rank()}] Finished")
@@ -158,11 +170,11 @@ def main():
         # https://github.com/pytorch/pytorch/issues/11899
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-    model_X, model_Y = setup_distributed(config)
+    model_X, model_Y, world_size = setup_distributed(config)
 
     dataloader, sampler = get_dataloader(config, ToyData())
 
-    training_demo(model_X, model_Y, dataloader, sampler)
+    training_demo(model_X, model_Y, dataloader, sampler, world_size)
     dist.barrier()
     dist.destroy_process_group()
 

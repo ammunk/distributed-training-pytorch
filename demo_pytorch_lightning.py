@@ -54,7 +54,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=128, type=int)
     args = parser.parse_args()
 
-    wandb_logger = WandbLogger(project='lightning distributed tester', settings=wandb.Settings(start_method='thread'))
+    wandb_logger = WandbLogger(project='lightning distributed tester', settings=wandb.Settings(start_method='thread')
+                               group='demo-lightning')
 
     train_dataloader = DataLoader(ToyData(), batch_size=args.batch_size,
                                   pin_memory=True,

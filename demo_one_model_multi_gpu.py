@@ -17,6 +17,7 @@ from toy_model_and_data import ToyData
 class MultiGPUModel(nn.Module):
 
     def __init__(self, dev0, dev1):
+        super().__init__()
         self.dev0 = dev0
         self.dev1 = dev1
         self.layers0 = nn.Sequential(
@@ -37,8 +38,8 @@ class MultiGPUModel(nn.Module):
 
     def forward(self, x):
         x = x.to(self.dev0)
-        x = self.layer0(x).to(self.dev1)
-        return self.layer1(x)
+        x = self.layers0(x).to(self.dev1)
+        return self.layers1(x)
 
 
 def setup_distributed(config):
@@ -54,10 +55,10 @@ def setup_distributed(config):
                                 + "must be an interger.")
         local_rank = int(os.environ["LOCAL_RANK"])
     else:
-        tasks_per_node = int(os.environ.get("TASKS_PER_NODE"))
+        local_world_size = int(os.environ.get("TASKS_PER_NODE"))
         local_rank = int(os.environ.get("SLURM_LOCALID"))
         if config.use_node_rank:
-            global_rank = int(os.environ.get("NODE_RANK"))*tasks_per_node + local_rank
+            global_rank = int(os.environ.get("NODE_RANK"))*local_world_size + local_rank
         else:
             global_rank = int(os.environ.get("SLURM_PROCID"))
 
@@ -88,6 +89,9 @@ def setup_distributed(config):
     print(f"[Process {dist.get_rank()}] Using torchrun: {config.torchrun}")
     print(f"[Process {dist.get_rank()}] Using backend: {config.backend}")
 
+    # assume one task per node consuming all gpus
+    num_gpus_per_task = torch.cuda.device_count()
+    assert num_gpus_per_task == 2
     dev0 = (dist.get_rank()*2) % local_world_size
     dev1 = (dist.get_rank()*2 + 1 ) % local_world_size
 
@@ -101,11 +105,13 @@ def setup_distributed(config):
 
 def training_demo(model, dataloader, sampler):
     if dist.get_rank() == 0:
-        run = wandb.init(project='distributed tester', settings=wandb.Settings(start_method='thread'))
+        run = wandb.init(project='distributed tester',
+                         group='multi-gpu-per-node',
+                         settings=wandb.Settings(start_method='thread'))
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    loss = nn.MSELoss()
+    loss_fn = nn.MSELoss()
     training = True
     max_iterations = 1000
     iteration = 0
@@ -120,9 +126,9 @@ def training_demo(model, dataloader, sampler):
             sampler.set_epoch(epoch)
         for _, (data, target) in enumerate(dataloader):
             optimizer.zero_grad(set_to_none=True)
-            target = target.to(model.dev1)
+            target = target.to(model.module.dev1)
             output = model(data)
-            loss = loss(output, target)
+            loss = loss_fn(output, target)
             loss.backward()
             optimizer.step()
             if dist.get_rank() == 0:
@@ -171,10 +177,10 @@ if __name__ == '__main__':
         # https://github.com/pytorch/pytorch/issues/11899
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-    model_X, model_Y = setup_distributed(config)
+    model = setup_distributed(config)
 
     dataloader, sampler = get_dataloader(config, ToyData())
 
-    training_demo(model_X, model_Y, dataloader, sampler)
+    training_demo(model, dataloader, sampler)
 
     dist.destroy_process_group()
