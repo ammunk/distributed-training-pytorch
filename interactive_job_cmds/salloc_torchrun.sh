@@ -2,7 +2,7 @@ WANDB_CREDENTIALS_PATH=~/wandb_credentials.txt
 export WANDB_API_KEY=$(cat $WANDB_CREDENTIALS_PATH)
 export OMP_NUM_THREADS=1
 export WORLD_SIZE=$SLURM_NTASKS
-export TASKS_PER_NODE=1 # used internally to specify global_rank
+export TASKS_PER_NODE=$(( SLURM_NTASKS / SLURM_NNODES )) # used internally to specify global_rank
 
 source ../virtual_env/bin/activate
 
@@ -34,7 +34,7 @@ echo "Valid nodes: ${valid_nodes}"
 echo "Num valid nodes: ${num_valid_nodes}"
 echo "Master node: ${master_node}"
 echo "Gpus per node: ${num_gpus_per_node}"
-
+echo "Tasks per node: ${TASKS_PER_NODE}"
 
 echo "Running distributed jobs by looping over individual nodes"
 for i in `seq 0 $(( num_valid_nodes - 1 ))`;
@@ -62,7 +62,7 @@ export NCCL_ASYNC_ERROR_HANDLING=1
 srun -w"${valid_nodes}" -N${num_valid_nodes} -n${num_valid_nodes} \
     -c${SLURM_CPUS_PER_TASK} -o demo_nccl_output.out -D"$(dirname "$(pwd)")" \
     torchrun --nnodes=${num_valid_nodes} --nproc_per_node=${TASKS_PER_NODE} \
-    --rdzv_id=0 --rdzv_backend=c10d --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
+    --rdzv_id=1 --rdzv_backend=c10d --rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} \
     demo.py --backend=nccl --torchrun
 
 #################### MPI ####################

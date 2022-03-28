@@ -24,7 +24,7 @@ def setup_distributed(config):
 
     if config.torchrun:
         # nccl is faster and is included in the pre-built binaries with CUDA
-        dist.init_process_group(backend=config.backend)
+        dist.init_process_group(backend=config.backend, timeout=datetime.timedelta(hours=1))
         try:
             world_size = int(os.getenv('WORLD_SIZE', None))
             local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
@@ -77,7 +77,7 @@ def setup_distributed(config):
     model_Y = DDP(model_Y, device_ids=[local_rank],)
     return model_X, model_Y, world_size
 
-def training_demo(model_X, model_Y, dataloader, sampler, world_size):
+def training_demo(model_X, model_Y, dataloader, sampler, world_size, torchrun):
     if dist.get_rank() == 0:
        run = wandb.init(project='distributed tester', group='base-demo',
                         settings=wandb.Settings(start_method='thread'))
@@ -135,6 +135,10 @@ def training_demo(model_X, model_Y, dataloader, sampler, world_size):
     dist.destroy_process_group(all_reduce_group)
     if dist.get_rank() == 0:
         iteration_pbar.close()
+        # wandb.finish is necessary in certain instances when doing distributed
+        # training. E.g. pytorch's rendezvous will throw an error upon exiting
+        # the python program unless wandb is "finished".
+        wandb.finish()
     print(f"[Process {dist.get_rank()}] Finished")
 
 def get_dataloader(config, dataset):
@@ -174,7 +178,7 @@ def main():
 
     dataloader, sampler = get_dataloader(config, ToyData())
 
-    training_demo(model_X, model_Y, dataloader, sampler, world_size)
+    training_demo(model_X, model_Y, dataloader, sampler, world_size, config.torchrun)
     dist.barrier()
     dist.destroy_process_group()
 
