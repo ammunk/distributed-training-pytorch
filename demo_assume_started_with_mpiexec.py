@@ -8,7 +8,6 @@ import torch.distributed as dist
 import torch.optim as optim
 import multiprocessing
 import socket
-import wandb
 from tqdm import tqdm
 import torch.multiprocessing
 from torch.distributed.elastic.multiprocessing.errors import record
@@ -16,42 +15,39 @@ from torch.distributed.elastic.multiprocessing.errors import record
 from argument_parser import get_args
 from toy_model_and_data import ToyModel, ToyData
 
+from mpi4py import MPI
+
+def _find_free_port():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
 def setup_distributed(config):
 
     # initialize models
     model_X = ToyModel()
     model_Y = ToyModel()
 
-    if config.torchrun:
-        # nccl is faster and is included in the pre-built binaries with CUDA
-        dist.init_process_group(backend=config.backend, timeout=datetime.timedelta(hours=1))
-        try:
-            world_size = int(os.getenv('WORLD_SIZE', None))
-            local_world_size = int(os.getenv('LOCAL_WORLD_SIZE', None))
-        except Exception as e:
-            raise RuntimeError("WORLD_SIZE environment variable is required and "
-                                + "must be an interger.")
-        local_rank = int(os.environ["LOCAL_RANK"])
-    else:
-        local_world_size = int(os.environ.get("TASKS_PER_NODE"))
-        local_rank = int(os.environ.get("SLURM_LOCALID"))
-        if config.use_node_rank:
-            global_rank = int(os.environ.get("NODE_RANK"))*local_world_size + local_rank
-        else:
-            global_rank = int(os.environ.get("SLURM_PROCID"))
+    comm = MPI.COMM_WORLD
+    hostname = socket.gethostbyname(socket.getfqdn())
+    global_rank = comm.rank
+    world_size = comm.size
+    # The local_rank is: rank % TASKS_PER_NODE
+    tasks_per_node = int(os.getenv("TASKS_PER_NODE", None))
+    local_rank = global_rank % tasks_per_node
 
-        if local_rank is None:
-            local_rank = int(os.getenv("PBS_LOCALID", None))
-        if local_rank is None:
-            raise ValueError("Either PBS_LOCALID or SLURM_LOCALID must be set to specify this process' rank")
+    os.environ["MASTER_ADDR"] = comm.bcast(hostname, root=0)
+    port = comm.bcast(_find_free_port(), root=0)
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(global_rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
 
-        world_size = int(os.getenv('WORLD_SIZE', None))
-
-        addr = os.getenv("MASTER_ADDR", None)
-        port = os.getenv("MASTER_PORT", None)
-        if addr is None or port is None:
-            raise ValueError("MASTER_ADDR and MASTER_PORT must be propvided with the env:// init_method")
-        dist.init_process_group(backend=config.backend, init_method=f'tcp://{addr}:{port}', rank=global_rank, world_size=world_size)
+    # we use the env:// init method (therefore setting the environment variables above)
+    dist.init_process_group(backend=config.backend)
 
     if dist.get_rank() == 0:
         print(f"[Process {dist.get_rank()}] World_size: {dist.get_world_size()}")
@@ -75,13 +71,9 @@ def setup_distributed(config):
     model_X = DDP(model_X, device_ids=[local_rank])
     model_Y= model_Y.cuda()
     model_Y = DDP(model_Y, device_ids=[local_rank],)
-    return model_X, model_Y, world_size
+    return model_X, model_Y
 
-def training_demo(model_X, model_Y, dataloader, sampler, world_size):
-    if dist.get_rank() == 0:
-       run = wandb.init(project='distributed tester', group='base-demo',
-                        settings=wandb.Settings(start_method='thread'))
-
+def training_demo(model_X, model_Y, dataloader, sampler):
     optimizer_X = optim.Adam(model_X.parameters(), lr=1e-3)
     optimizer_Y = optim.Adam(model_Y.parameters(), lr=1e-3)
 
@@ -121,9 +113,6 @@ def training_demo(model_X, model_Y, dataloader, sampler, world_size):
             dist.all_reduce(all_reduce_loss_X*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
             all_reduce_loss_Y = l_Y.detach().cpu()
             dist.all_reduce(all_reduce_loss_Y*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
-            if dist.get_rank() == 0:
-                wandb.log({'loss/lossX': all_reduce_loss_X / (batch_size * world_size) }, commit=False)
-                wandb.log({'loss/lossY': all_reduce_loss_Y / (batch_size * world_size)})
 
             iteration_pbar.update(1)
             iteration += 1
@@ -135,10 +124,6 @@ def training_demo(model_X, model_Y, dataloader, sampler, world_size):
     dist.destroy_process_group(all_reduce_group)
     if dist.get_rank() == 0:
         iteration_pbar.close()
-        # wandb.finish is necessary in certain instances when doing distributed
-        # training. E.g. pytorch's rendezvous will throw an error upon exiting
-        # the python program unless wandb is "finished".
-        wandb.finish()
     print(f"[Process {dist.get_rank()}] Finished")
 
 def get_dataloader(config, dataset):
@@ -174,11 +159,11 @@ def main():
         # https://github.com/pytorch/pytorch/issues/11899
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-    model_X, model_Y, world_size = setup_distributed(config)
+    model_X, model_Y = setup_distributed(config)
 
     dataloader, sampler = get_dataloader(config, ToyData())
 
-    training_demo(model_X, model_Y, dataloader, sampler, world_size)
+    training_demo(model_X, model_Y, dataloader, sampler)
     dist.barrier()
     dist.destroy_process_group()
 
