@@ -77,17 +77,17 @@ srun -w"${valid_nodes}" -N${num_valid_nodes} -n${num_valid_nodes} \
 
 ##############################################
 
-# echo "Running MPI job"
+# echo "Running job with the MPI backend"
 # srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} --mpi=pmi2 \
 #     -c${SLURM_CPUS_PER_TASK} -o demo_mpi_output.out -D"$(dirname "$(pwd)")" \
 #     python demo.py --backend=mpi
 # wait
 
-# echo "Running MPI job with mpiexec"
-# mpiexec -n ${WORLD_SIZE} -H "${valid_nodes}" \
-#     -output-filename demo_mpiexec_output.out -wdir "$(dirname "$(pwd)")" \
-#     python demo.py --backend=mpi
-# wait
+echo "Running MPI job with mpiexec"
+mpiexec -n ${WORLD_SIZE} -H "${valid_nodes}" \
+    -output-filename demo_mpiexec_output.out -wdir "$(dirname "$(pwd)")" \
+    python demo_assume_started_with_mpiexec.py --backend=nccl
+wait
 
 #################### GLOO ####################
 
