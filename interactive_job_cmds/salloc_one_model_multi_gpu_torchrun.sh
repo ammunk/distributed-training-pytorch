@@ -1,7 +1,7 @@
 WANDB_CREDENTIALS_PATH=~/wandb_credentials.txt
 export WANDB_API_KEY=$(cat $WANDB_CREDENTIALS_PATH)
 export OMP_NUM_THREADS=1
-export WORLD_SIZE=$SLURM_NTASKS
+export WORLD_SIZE=2
 export TASKS_PER_NODE=1 # used internally to specify global_rank
 
 source ../virtual_env/bin/activate
