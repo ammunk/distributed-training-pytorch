@@ -40,11 +40,6 @@ def setup_distributed(config):
         else:
             global_rank = int(os.environ.get("SLURM_PROCID"))
 
-        if local_rank is None:
-            local_rank = int(os.getenv("PBS_LOCALID", None))
-        if local_rank is None:
-            raise ValueError("Either PBS_LOCALID or SLURM_LOCALID must be set to specify this process' rank")
-
         world_size = int(os.getenv('WORLD_SIZE', None))
 
         addr = os.getenv("MASTER_ADDR", None)
