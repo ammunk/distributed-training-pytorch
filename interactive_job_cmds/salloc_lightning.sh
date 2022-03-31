@@ -2,7 +2,7 @@ WANDB_CREDENTIALS_PATH=~/wandb_credentials.txt
 export WANDB_API_KEY=$(cat $WANDB_CREDENTIALS_PATH)
 export OMP_NUM_THREADS=1
 export WORLD_SIZE=$SLURM_NTASKS
-export TASKS_PER_NODE=1 # used internally to specify global_rank
+export TASKS_PER_NODE=2 # used internally to specify global_rank
 
 source ../virtual_env/bin/activate
 
@@ -18,7 +18,7 @@ master_node=${nodes_list[0]}
 # subset of the allocated node be careful and ensure that the master address
 # (rank 0) lives at master address.
 export MASTER_ADDR=$(hostname)
-export MASTER_PORT=2345
+export MASTER_PORT=8964
 
 # assumes gpus are allocated using gres so that each task on the same node sees
 # ALL gpus allocated per node
@@ -48,11 +48,10 @@ echo "Gpus per node: ${num_gpus_per_node}"
 
 ##############################################
 
-# export NCCL_BLOCKING_WAIT=1 # Pytorch Lightning uses the NCCL backend for
+export NCCL_BLOCKING_WAIT=1 # Pytorch Lightning uses the NCCL backend for
                             # inter-GPU communication by default. Set this
                             # variable to avoid timeout errors. (CAN CAUSE LARGE
                             # OVERHEAD)
-export NCCL_ASYNC_ERROR_HANDLING=1
 echo "Running job with the NCCL backend"
 export PL_TORCH_DISTRIBUTED_BACKEND=nccl
 srun -w"${valid_nodes}" -N${num_valid_nodes} -n${WORLD_SIZE} \

@@ -84,8 +84,8 @@ srun -w"${valid_nodes}" -N${num_valid_nodes} -n${num_valid_nodes} \
 # wait
 
 echo "Running MPI job with mpiexec"
-mpiexec -n ${WORLD_SIZE} -H "${valid_nodes}" \
-    -output-filename demo_mpiexec_output.out -wdir "$(dirname "$(pwd)")" \
+mpiexec -n ${WORLD_SIZE} \
+    -wdir "$(dirname "$(pwd)")" \
     python demo_assume_started_with_mpiexec.py --backend=nccl
 wait
 
