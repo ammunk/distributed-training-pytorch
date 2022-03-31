@@ -5,6 +5,8 @@ Submit a job based on the provided options
                                 Ignored on the PLAI cluster. Default: rrg-kevinlb
 -g, --gpus                    Number of gpus per node. Default: 1
 -c, --cpus                    Number of cpus per node: Default: 2
+-p, --partition               Partition to use on the PLAI cluster (plai, plai_towers)
+                                Default: plai
 -j, --job-type                Type of job to run, one of
                                 (standard, sweep, distributed).
                                 Default: standard
@@ -20,7 +22,7 @@ Submit a job based on the provided options
 -e, --exp-name                Name of the experiment. Used to created convenient
                                 folders in ${SCRATCH}/${project_name} and to name
                                 the generated output files. Default: "" (empty)
--n, --num_nodes               Number of nodes. Default: 1
+-N, --nodes                   Number of nodes. Default: 1
 -d, --data                    Whitespace separated list of paths to directories or
                                 files to transfer to ${SLURM_TMPDIR}. These paths
                                 MUST be relative to ${SCRATCH}/${project_name}
