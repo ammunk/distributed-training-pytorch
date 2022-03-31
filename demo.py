@@ -117,10 +117,10 @@ def training_demo(model_X, model_Y, dataloader, sampler, world_size):
             # all_reduce using specific process group
             # assumes each process has equal batch size on EVERY iteration
             batch_size = target.size(0)
-            all_reduce_loss_X = l_X.detach().cpu()
-            dist.all_reduce(all_reduce_loss_X*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
-            all_reduce_loss_Y = l_Y.detach().cpu()
-            dist.all_reduce(all_reduce_loss_Y*batch_size, group=all_reduce_group, op=dist.ReduceOp.SUM)
+            all_reduce_loss_X = l_X.detach().cpu()*batch_size
+            dist.all_reduce(all_reduce_loss_X, group=all_reduce_group, op=dist.ReduceOp.SUM)
+            all_reduce_loss_Y = l_Y.detach().cpu()*batch_size
+            dist.all_reduce(all_reduce_loss_Y, group=all_reduce_group, op=dist.ReduceOp.SUM)
             if dist.get_rank() == 0:
                 wandb.log({'loss/lossX': all_reduce_loss_X / (batch_size * world_size) }, commit=False)
                 wandb.log({'loss/lossY': all_reduce_loss_Y / (batch_size * world_size)})
