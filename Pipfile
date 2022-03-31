@@ -15,6 +15,7 @@ torch = {version = "==1.10.1+cu113", index = "pytorch-cu113"}
 torchvision = {version = "==0.11.2+cu113", index = "pytorch-cu113"}
 torchaudio = {version = "==0.10.1+cu113", index = "pytorch-cu113"}
 pytorch-lightning = "*"
+mpi4py = "*"
 
 [requires]
 python_version = "3.9"
